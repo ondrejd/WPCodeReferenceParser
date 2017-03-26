@@ -6,59 +6,57 @@
 
 package com.ondrejd.wpcodereferenceparser;
 
-import com.ondrejd.wordpress.code.reference.Parser;
+import java.util.prefs.Preferences;
 import javafx.application.Application;
-import javafx.event.ActionEvent;
-import javafx.event.EventHandler;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
 import javafx.scene.Scene;
-import javafx.scene.control.Button;
-import javafx.scene.control.Label;
-import javafx.scene.control.TextField;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
+import javafx.stage.WindowEvent;
 
-/**
- *
- * @author ondrejd
- */
 public class WPCodeReferenceParser extends Application {
+    private static final String WINDOW_POSITION_X = "Window_Position_X";
+    private static final String WINDOW_POSITION_Y = "Window_Position_Y";
+    private static final String WINDOW_WIDTH = "Window_Width";
+    private static final String WINDOW_HEIGHT = "Window_Height";
+    private static final double DEFAULT_X = 10;
+    private static final double DEFAULT_Y = 10;
+    private static final double DEFAULT_WIDTH = 640;
+    private static final double DEFAULT_HEIGHT = 480;
+    private static final String NODE_NAME = "WPCodeReferenceParser";
     
     @Override
-    public void start(Stage primaryStage) {
-        Scene scene = new Scene(createUi(), 300, 250);
+    public void start(Stage stage) throws Exception {
+        FXMLLoader loader = new FXMLLoader();
+        Parent root = loader.load(getClass().getResource("main.fxml").openStream());
+        Scene scene = new Scene(root);
         
-        primaryStage.setTitle("WordPress Code Reference Parser Test");
-        primaryStage.setScene(scene);
-        primaryStage.show();
-    }
-
-    private StackPane createUi() {
-        StackPane root = new StackPane();
-
-        // HBox with URL label/input
-        HBox hbox = new HBox();
-        Label lbl1 = new Label();
-        TextField tfield1 = new TextField();
-        lbl1.setText("WPCR Url:");
-        lbl1.setLabelFor(tfield1);
-        tfield1.setId("wpcrUrlTextField");
-        tfield1.setText(Parser.getSearchUrl(Parser.TYPES.HOOKS, 1));
-        hbox.getChildren().add(lbl1);
-        hbox.getChildren().add(tfield1);
-        root.getChildren().add(hbox);
-        
-        Button btn = new Button();
-        btn.setText("Start parsing");
-        btn.setOnAction(new EventHandler<ActionEvent>() {
-            @Override
-            public void handle(ActionEvent event) {
-                System.out.println("Hello World!");
-            }
+        // Setting the css style file
+        scene.getStylesheets().add("resources/css/styles.css");
+        // Set title
+        stage.setTitle("WordPress Code Reference Parser Test");
+        // Pull the saved preferences and set the stage size and start location
+        Preferences pref = Preferences.userRoot().node(NODE_NAME);
+        double x = pref.getDouble(WINDOW_POSITION_X, DEFAULT_X);
+        double y = pref.getDouble(WINDOW_POSITION_Y, DEFAULT_Y);
+        double width = pref.getDouble(WINDOW_WIDTH, DEFAULT_WIDTH);
+        double height = pref.getDouble(WINDOW_HEIGHT, DEFAULT_HEIGHT);
+        stage.setX(x);
+        stage.setY(y);
+        stage.setWidth(width);
+        stage.setHeight(height);
+        // Set scene
+        stage.setScene(scene);
+        stage.setOnCloseRequest((final WindowEvent event) -> {
+            // Save window size and position
+            Preferences preferences = Preferences.userRoot().node(NODE_NAME);
+            preferences.putDouble(WINDOW_POSITION_X, stage.getX());
+            preferences.putDouble(WINDOW_POSITION_Y, stage.getY());
+            preferences.putDouble(WINDOW_WIDTH, stage.getWidth());
+            preferences.putDouble(WINDOW_HEIGHT, stage.getHeight());
         });
-        root.getChildren().add(btn);
-        
-        return root;
+        // Show application
+        stage.show();
     }
 
     /**
