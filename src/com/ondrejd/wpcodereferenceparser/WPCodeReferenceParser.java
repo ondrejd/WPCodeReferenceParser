@@ -29,10 +29,6 @@ public class WPCodeReferenceParser extends Application {
     public void start(Stage stage) throws Exception {
         FXMLLoader loader = new FXMLLoader();
         Parent root = loader.load(getClass().getResource("main.fxml").openStream());
-        Scene scene = new Scene(root);
-        
-        // Setting the css style file
-        scene.getStylesheets().add("resources/css/styles.css");
         // Set title
         stage.setTitle("WordPress Code Reference Parser Test");
         // Pull the saved preferences and set the stage size and start location
@@ -46,6 +42,7 @@ public class WPCodeReferenceParser extends Application {
         stage.setWidth(width);
         stage.setHeight(height);
         // Set scene
+        Scene scene = new Scene(root);
         stage.setScene(scene);
         stage.setOnCloseRequest((final WindowEvent event) -> {
             // Save window size and position
@@ -55,6 +52,7 @@ public class WPCodeReferenceParser extends Application {
             preferences.putDouble(WINDOW_WIDTH, stage.getWidth());
             preferences.putDouble(WINDOW_HEIGHT, stage.getHeight());
         });
+        stage.setResizable(false);
         // Show application
         stage.show();
     }

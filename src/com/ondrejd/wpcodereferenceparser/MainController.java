@@ -16,10 +16,9 @@ import javafx.collections.ObservableList;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
-import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ProgressBar;
 import javafx.scene.control.TextArea;
-import javafx.scene.control.TextField;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -31,14 +30,8 @@ import org.jsoup.select.Elements;
  * @author ondrejd
  */
 public class MainController implements Initializable {
-    public static enum TYPES { CLASSES, FUNCTIONS, HOOKS };
     public static String DEFAULT_FILE = "wordpress-api.xml";
-    public static String SEARCH_URL = "https://developer.wordpress.org/reference/%s/page/%d/";
-
-    private String currentType;
-    private int currentPage;
-    private int totalPages;
-    private ObservableList<ReferenceItem> items;
+    public static String SEARCH_URL = "https://developer.wordpress.org/reference/";
 
     /**
      * Single reference item.
@@ -60,39 +53,34 @@ public class MainController implements Initializable {
             this.description = description;
             this.url = url;
         }
+
+        @Override
+        public String toString() {
+            return "- refitem (" + type + ") \"" + name + "\"; " + 
+                    "description \"" + description + "\"; " + 
+                    "url \"" + url;
+        }
     }
 
-    @FXML
-    private Button Button1;
     @FXML
     private ComboBox<String> ComboBox1;
     @FXML
     private TextArea TextArea1;
     @FXML
-    private TextField TextField1;
+    private ProgressBar ProgressBar1;
 
     @FXML
     private void handleComboBox1Action(ActionEvent event) {
-        String currentType = ComboBox1.getValue().toString();
-        String url  = "";
+        ProgressBar1.setProgress(-1f);
 
-        switch (currentType) {
-            case "classes"   : url = getUrl(TYPES.CLASSES); break;
-            case "functions" : url = getUrl(TYPES.FUNCTIONS); break;
-            case "hooks"     : url = getUrl(TYPES.HOOKS); break;
-        }
-
-        TextField1.setText(url);
-        log("Search URL: " + url);
-        Button1.setDisable(false);
-    }
-
-    @FXML
-    private void handleButton1Action(ActionEvent event) {
-        String url = TextField1.getText();
-        log("Start parsing URL " + url);
-
-        parse(url);
+        /**
+         * @link http://stackoverflow.com/questions/4005350/java-how-to-run-thread-separately-from-main-program-class
+         */
+        String type = ComboBox1.getValue().toString();
+        ReferenceParser parser = new ReferenceParser(type);
+        Thread parserThread = new Thread(parser);
+        parserThread.setDaemon(true);
+        parserThread.start();
     }
 
     /**
@@ -103,8 +91,6 @@ public class MainController implements Initializable {
         // Setup menuitems of ComboBox1
         ObservableList<String> resourceTypes = FXCollections.observableArrayList("functions", "classes", "hooks");
         ComboBox1.setItems(resourceTypes);
-        // Disable Button1
-        Button1.setDisable(true);
         // Set focus on ComboBox1
         Platform.runLater(new Runnable() {
             @Override
@@ -112,20 +98,6 @@ public class MainController implements Initializable {
                 ComboBox1.requestFocus();
             }
         });
-    }
-
-    /**
-     * @return Index of currently parsed page.
-     */
-    public int getCurrentPage() {
-        return currentPage;
-    }
-
-    /**
-     * @return Total count of pages to parse.
-     */
-    public int getTotalPages() {
-        return totalPages;
     }
 
     /**
@@ -138,106 +110,174 @@ public class MainController implements Initializable {
 
     /**
      * @param type Type of reference ("classes", "functions", "hooks").
-     * @return Returns URL of page to parse.
      */
-    private String getUrl(TYPES type) {
-        String typeStr = "";
-
-        switch(type) {
-            case FUNCTIONS: typeStr = "functions"; break;
-            case HOOKS: typeStr = "hooks"; break;
-            case CLASSES:
-            default:
-                typeStr = "classes";
-                break;
-        }
-
-        return SEARCH_URL.replace("%s", typeStr);
+    private String prepareUrl(String type) {
+        return SEARCH_URL + type + "/";
     }
 
     /**
-     * Parses for WordPress Code Reference.
-     * @param url
+     * @param type Type of reference ("classes", "functions", "hooks").
+     * @param page Number of currently processed page.
      */
-    private void parse(String url) {
-        try {
-            Document doc = Jsoup.connect(url).get();
-            //log(doc.toString());
+    private String prepareUrl(String type, int page) {
+        String url = prepareUrl(type);
+        return url + "/page/" + Integer.toString(page) + "/";
+    }
 
-            currentPage = 1;
+    /**
+     * Implements WordPress reference site parser.
+     */
+    class ReferenceParser implements Runnable {
+        /**
+         * Type of reference to parse ("classes", "functions", "hooks").
+         */
+        private String type;
 
-            totalPages = ( totalPages <= 0 ) ? parseTotalPages(doc) : totalPages;
-            items = FXCollections.observableArrayList();
+        /**
+         * Currently processed page (according to pagination on target HTML pages).
+         */
+        private int page;
 
-            log("Current page index : " + Integer.toString(currentPage) + "");
-            log("Total pages count  : " + Integer.toString(totalPages) + "");
+        /**
+         * URL of currently processed page.
+         */
+        private String url;
 
-            // Parse the first page
-            parsePage(doc);
-            currentPage++;
+        /**
+         * Count of all pages to parse (according to pagination on target HTML pages).
+         */
+        private int total;
 
-            // Parse other pages
-            for ( int i = currentPage; i < totalPages; i++ ) {
-                url = url + Integer.toString(currentPage);
-                parsePage(url);
-                currentPage++;
+        /**
+         * Holds already parsed reference items
+         */
+        private ObservableList<ReferenceItem> items;
+
+        /**
+         * @return Index of currently parsed page.
+         */
+        public int getPage() {
+            return page;
+        }
+
+        /**
+         * @return URL of currently processed page.
+         */
+        public String getUrl() {
+            return url;
+        }
+
+        /**
+         * @return Total count of pages to parse.
+         */
+        public int getTotal() {
+            return total;
+        }
+
+        public int getItemsCount() {
+            return items.size();
+        }
+
+        public ObservableList<ReferenceItem> getItems() {
+            return items;
+        }
+
+        /**
+         * Constructor.
+         * @param type 
+         */
+        public ReferenceParser(String type) {
+            this.type = type;
+            this.url = prepareUrl(type);
+        }
+
+        /**
+         * Starts parsing.
+         */
+        public void run() {
+            try {
+                Document doc = Jsoup.connect(url).get();
+                //log(doc.toString());
+
+                page = 1;
+                total = ( total <= 0 ) ? parseTotalPages(doc) : total;
+                items = FXCollections.observableArrayList();
+                //log("Total pages count  : " + Integer.toString(total) + "");
+                //log("Current page index : " + Integer.toString(page) + "");
+                //log("Parsing URL        : " + url);
+
+                // Parse the first page
+                parse(doc);
+                page++;
+
+                // Parse other pages
+                for ( int i = page; i < total; i++ ) {
+                    //log("Current page index : " + Integer.toString(page) + "");
+                    //log("Parsing URL        : " + url);
+
+                    url = prepareUrl(type, page);
+                    parse(url);
+                    page++;
+                }
+
+                // Parsing is finished - save the XML
+                //...
+            } catch (IOException ex) {
+                Logger.getLogger(MainController.class.getName()).log(Level.SEVERE, null, ex);
+            } catch (NullPointerException ex) {
+                Logger.getLogger(MainController.class.getName()).log(Level.SEVERE, null, ex);
             }
-        } catch (IOException ex) {
-            Logger.getLogger(MainController.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (NullPointerException ex) {
-            Logger.getLogger(MainController.class.getName()).log(Level.SEVERE, null, ex);
-        }
-    }
-
-    /**
-     * Parses single reference's page (form page's URL).
-     * @param url 
-     */
-    private void parsePage(String url) {
-        try {
-            Document doc = Jsoup.connect(url).get();
-            parsePage(doc);
-        } catch (IOException ex) {
-            Logger.getLogger(MainController.class.getName()).log(Level.SEVERE, null, ex);
-        }
-    }
-
-    /**
-     * Parses single reference's page (from {@see Document}).
-     * @param doc 
-     */
-    private void parsePage(Document doc) {
-        Elements articles = doc.getElementsByClass("wp-parser-class");
-
-        for (Element article : articles) {
-            Element h1 = article.getElementsByTag("h1").first();
-            String type = currentType;
-            String name = h1.text();
-            String desc = article.getElementsByClass("description").first().text().replace("Class: ", "");
-            String url = h1.getElementsByTag("a").first().attr("href");
-
-            ReferenceItem item = new ReferenceItem(type, name, desc, url);
-            items.add(item);
-        }
-    }
-
-    /**
-     * 
-     * @param doc
-     * @return
-     * @throws NullPointerException 
-     */
-    private int parseTotalPages(Document doc) {
-        int totalPages = 0;
-
-        try {
-            Element elm1 = doc.getElementsByClass("pagination").first();
-            Element elm2 = elm1.children().last().previousElementSibling();
-            totalPages   = Integer.parseInt(elm2.text());
-        } catch(NullPointerException ex) {
-            Logger.getLogger(MainController.class.getName()).log(Level.SEVERE, null, ex);
         }
 
-        return totalPages;
+        /**
+         * Parses single reference's page (form page's URL).
+         * @param url 
+         */
+        private void parse(String url) {
+            try {
+                Document doc = Jsoup.connect(url).get();
+                parse(doc);
+            } catch (IOException ex) {
+                Logger.getLogger(MainController.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+
+        /**
+         * Parses single reference's page.
+         * @param doc HTML document to parse.
+         */
+        private void parse(Document doc) {
+            Elements articles = doc.getElementsByClass("wp-parser-class");
+
+            for (Element article : articles) {
+                Element h1 = article.getElementsByTag("h1").first();
+                String name = h1.text();
+                String desc = article.getElementsByClass("description").first().text().replace("Class: ", "");
+                String url = h1.getElementsByTag("a").first().attr("href");
+
+                ReferenceItem item = new ReferenceItem(type, name, desc, url);
+                items.add(item);
+                //log(item.toString());
+            }
+        }
+
+        /**
+         * @param doc HTML document to parse.
+         * @return Returns total count of pages to parse.
+         * @throws NullPointerException 
+         */
+        private int parseTotalPages(Document doc) {
+            int totalPages = 0;
+
+            try {
+                Element elm1 = doc.getElementsByClass("pagination").first();
+                Element elm2 = elm1.children().last().previousElementSibling();
+                totalPages   = Integer.parseInt(elm2.text());
+            } catch(NullPointerException ex) {
+                Logger.getLogger(ReferenceParser.class.getName()).log(Level.SEVERE, null, ex);
+            }
+
+            return totalPages;
+        }
     }
 }
